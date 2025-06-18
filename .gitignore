@@ -1,3 +1,6 @@
+# 데이터 파일
+common-bible-kr.txt
+
 # 환경변수 및 보안 파일
 .env
 config/.env
