@@ -40,6 +40,7 @@ common-bible/
 │   └── verse-navigator.js
 ├── data/
 │   ├── common-bible-kr.txt
+│   ├── bible_book_mappings.json  # 성경 책 이름 매핑 데이터
 │   └── output/             # 생성된 HTML 파일들
 ├── config/
 │   ├── config.yaml         # 기본 설정
@@ -62,6 +63,19 @@ class BibleParser:
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.chapters = []
+        self.load_book_mappings()
+    
+    def load_book_mappings(self) -> None:
+        """성경 책 이름 매핑 데이터 로드"""
+        with open('data/bible_book_mappings.json', 'r', encoding='utf-8') as f:
+            self.book_mappings = json.load(f)
+    
+    def identify_book(self, text: str) -> Optional[str]:
+        """텍스트에서 성경 책 이름 식별"""
+        for book in self.book_mappings:
+            if text.startswith(book['약칭']):
+                return book['전체 이름']
+        return None
     
     def parse_file(self) -> List[Chapter]:
         """전체 파일을 파싱하여 장 단위로 분할"""
@@ -77,7 +91,9 @@ class BibleParser:
 ```
 
 **주요 기능:**
+- 성경 책 이름 매핑 데이터 로드 (`bible_book_mappings.json`)
 - 장 시작 패턴 인식 (`"창세 1:1"`, `"2마카 2:1"` 등)
+- 약칭에서 전체 이름으로 변환 (`"창세"` → `"창세기"`)
 - 절 번호 추출 및 본문 분리
 - `¶` 기호 기반 단락 구분 처리
 - 단독 `¶` 기호 시 절 세분화 (`창세-1-4a`, `창세-1-4b`)
@@ -135,6 +151,32 @@ class WordPressPublisher:
 - 초기 `private` 상태로 게시
 - 일괄 `publish` 상태 변경
 - 오류 처리 및 재시도 로직
+
+---
+
+## 📊 데이터 파일 구조
+
+### 성경 책 이름 매핑 (bible_book_mappings.json)
+```json
+[
+  {
+    "약칭": "창세",
+    "전체 이름": "창세기",
+    "영문 이름": "Genesis"
+  },
+  {
+    "약칭": "출애",
+    "전체 이름": "출애굽기",
+    "영문 이름": "Exodus"
+  }
+  // ... 총 66권의 성경 책 매핑
+]
+```
+
+**용도:**
+- 텍스트 파싱 시 책 이름 식별
+- 약칭을 전체 이름으로 변환
+- 다국어 지원을 위한 영문 이름 제공
 
 ---
 
