@@ -29,10 +29,16 @@
 ```
 common-bible/
 ├── src/
+│   ├── __init__.py         # 패키지 초기화
 │   ├── parser.py           # 텍스트 파싱 엔진
+│   ├── models.py           # 데이터 모델 클래스
 │   ├── html_generator.py   # HTML 생성기
 │   ├── wp_publisher.py     # 워드프레스 게시 클래스
-│   └── config.py           # 설정 관리
+│   ├── config.py           # 설정 관리
+│   ├── security.py         # 보안 관리
+│   ├── logger.py           # 로깅 시스템
+│   ├── cli.py              # 명령줄 인터페이스
+│   └── main.py             # 메인 실행 모듈
 ├── templates/
 │   └── chapter_template.html
 ├── static/
@@ -43,13 +49,23 @@ common-bible/
 │   ├── bible_book_mappings.json  # 성경 책 이름 매핑 데이터
 │   └── output/             # 생성된 HTML 파일들
 ├── config/
-│   ├── config.yaml         # 기본 설정
-│   └── .env               # 환경변수 (보안)
-├── logs/
-└── tests/
-    ├── test_parser.py
-    ├── test_html_generator.py
-    └── test_wp_publisher.py
+│   └── .env.example        # 환경변수 예제 (보안)
+├── logs/                   # 로그 저장 디렉터리
+├── tests/
+│   ├── test_parser.py
+│   ├── test_html_generator.py
+│   ├── test_wp_publisher.py
+│   └── test_integration.py
+├── docs/
+│   ├── requirements.md     # 요구사항 문서
+│   ├── design-specification.md  # 설계 문서
+│   ├── api.md              # API 문서
+│   └── deployment.md       # 배포 가이드
+├── CHANGELOG.md            # 변경사항 기록
+├── CONTRIBUTING.md         # 기여 가이드
+├── LICENSE                 # 라이선스
+├── README.md               # 프로젝트 설명
+└── requirements.txt        # 의존성 패키지 목록
 ```
 
 ---
@@ -182,14 +198,35 @@ class WordPressPublisher:
 
 ## 📊 데이터 모델
 
+### Bible 클래스
+```python
+@dataclass
+class Bible:
+    title: str              # "공동번역성서"
+    books: List[Book]        # 책 객체 리스트
+    language: str = "ko"     # 언어
+```
+
+### Book 클래스
+```python
+@dataclass
+class Book:
+    name: str               # "창세기"
+    abbr: str               # "창세"
+    chapters: List[Chapter]  # 장 객체 리스트
+    eng_name: str = ""       # "Genesis"
+    id: str = ""            # "창세"
+```
+
 ### Chapter 클래스
 ```python
 @dataclass
 class Chapter:
     book_name: str          # "창세기"
     chapter_number: int     # 1
-    verses: List[Verse]
-    id: str                # "창세-1"
+    verses: List[Verse]      # 절 객체 리스트
+    id: str = ""            # "창세-1"
+    book_abbr: str = ""     # "창세"
 ```
 
 ### Verse 클래스
@@ -197,42 +234,73 @@ class Chapter:
 @dataclass
 class Verse:
     number: int             # 1
-    text: str              # "한처음에 하느님께서..."
-    has_paragraph: bool    # ¶ 기호 유무
-    sub_parts: List[str]   # 단독 ¶로 분할된 경우
-    id: str               # "창세-1-1" or "창세-1-4a"
+    text: str               # "한처음에 하느님께서..."
+    has_paragraph: bool = False  # ¶ 기호 유무
+    sub_parts: List[str] = field(default_factory=list)  # 단독 ¶로 분할된 경우
+    id: str = ""            # "창세-1-1" or "창세-1-4a"
 ```
 
 ---
 
 ## 🔒 보안 설계
 
-### 인증 관리
+### 보안 관리자 (security.py)
 ```python
 class SecurityManager:
     def __init__(self):
+        """보안 관리자 초기화"""
+        self.wp_token = None
+        self.wp_url = None
         self.load_credentials()
     
-    def load_credentials(self):
+    def load_credentials(self) -> None:
         """환경변수에서 인증 정보 로드"""
         self.wp_token = os.getenv('WP_AUTH_TOKEN')
         self.wp_url = os.getenv('WP_BASE_URL')
     
     def validate_https(self, url: str) -> bool:
         """HTTPS 연결 검증"""
-        return url.startswith('https://')
+        if not url:
+            return False
+        parsed = urlparse(url)
+        return parsed.scheme == 'https'
     
     def sanitize_input(self, text: str) -> str:
-        """입력 데이터 새니타이징"""
+        """입력 텍스트 새니타이징"""
+        if not text:
+            return ""
         return html.escape(text)
+    
+    def sanitize_html_content(self, content: str) -> str:
+        """HTML 콘텐츠 새니타이징 (XSS 방지)"""
+        if not content:
+            return ""
+        # 스크립트 태그 및 위험 요소 제거
+        content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL)
+        return content
+    
+    def generate_signature(self, data: str, key: Optional[str] = None) -> str:
+        """HMAC 서명 생성"""
+        if key is None:
+            key = self.wp_token or 'default-key'
+        h = hmac.new(key.encode('utf-8'), data.encode('utf-8'), hashlib.sha256)
+        return base64.b64encode(h.digest()).decode('utf-8')
 ```
 
-### 환경변수 (.env)
+### 환경변수 (.env.example)
 ```
+# WordPress API 설정
 WP_BASE_URL=https://your-wordpress-site.com
 WP_AUTH_TOKEN=your_application_password
 WP_API_RATE_LIMIT=60
+
+# 로깅 설정
 LOG_LEVEL=INFO
+LOG_TO_CONSOLE=true
+LOG_COLOR=true
+
+# 보안 설정
+VERIFY_SSL=true
 ```
 
 ---
@@ -295,28 +363,46 @@ cp config/.env.example config/.env
 python -m pytest tests/
 ```
 
-### 2. 파싱 및 변환
+### 2. CLI 도구 사용 (cli.py)
 ```bash
-# 전체 파일 파싱
-python src/parser.py --input data/common-bible-kr.txt
+# 시스템 정보 확인
+python -m src.cli info
+
+# 텍스트 파싱
+python -m src.cli parse --input data/common-bible-kr.txt --split
 
 # HTML 생성
-python src/html_generator.py --chapters data/output/chapters.json
+python -m src.cli generate --input data/output/chapters
 
-# 개별 HTML 파일 확인
-open data/output/genesis-1.html
+# 워드프레스 인증 테스트
+python -m src.cli publish --test
+
+# 워드프레스에 비공개로 게시
+python -m src.cli publish --status private
+
+# 일괄 공개로 상태 변경
+python -m src.cli update-status --status publish
+
+# 전체 파이프라인 실행
+python -m src.cli pipeline --status private
 ```
 
-### 3. 워드프레스 게시
+### 3. 메인 모듈 사용 (main.py)
 ```bash
-# 인증 테스트
-python src/wp_publisher.py --test-auth
+# 전체 파이프라인 실행
+python -m src.main --full-pipeline
 
-# 비공개 상태로 일괄 업로드
-python src/wp_publisher.py --upload-all --status=private
+# 텍스트 파싱만 실행
+python -m src.main --parse --input data/common-bible-kr.txt --split-chapters
 
-# 준비 완료 후 일괄 공개
-python src/wp_publisher.py --publish-all
+# HTML 생성만 실행
+python -m src.main --generate-html --json-input data/output/chapters
+
+# 워드프레스 게시만 실행
+python -m src.main --publish --status private
+
+# 인증 테스트만 실행
+python -m src.main --test-auth
 ```
 
 ---
@@ -356,19 +442,63 @@ python src/wp_publisher.py --publish-all
 
 ## 📝 운영 가이드
 
-### 로깅 및 모니터링
+### 로깅 시스템 (logger.py)
 ```python
-import logging
-
-# 로그 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/bible_converter.log'),
-        logging.StreamHandler()
-    ]
-)
+class Logger:
+    """로거 클래스"""
+    
+    _instance = None  # 싱글톤 인스턴스
+    
+    def __init__(self):
+        """로거 초기화"""
+        if self._initialized:
+            return
+        
+        self._initialized = True
+        self.loggers = {}  # 이름별 로거 캐시
+    
+    def setup(self, log_level: str = 'INFO',
+              log_file: Optional[str] = None,
+              log_to_console: bool = True,
+              use_color: bool = True) -> None:
+        """로깅 시스템 설정"""
+        # 로그 레벨 설정
+        log_level_map = {
+            'DEBUG': logging.DEBUG,
+            'INFO': logging.INFO,
+            'WARNING': logging.WARNING,
+            'ERROR': logging.ERROR
+        }
+        level = log_level_map.get(log_level.upper(), logging.INFO)
+        
+        # 로그 디렉토리 및 파일 설정
+        if log_file is None:
+            timestamp = time.strftime('%Y%m%d')
+            log_file = f'logs/bible_converter_{timestamp}.log'
+        
+        # 파일 핸들러 (RotatingFileHandler 사용)
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
+        )
+        file_handler.setFormatter(file_formatter)
+        
+        # 콘솔 핸들러 (컬러 지원)
+        if log_to_console and use_color:
+            color_formatter = colorlog.ColoredFormatter(
+                '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                log_colors={
+                    'DEBUG': 'cyan',
+                    'INFO': 'green',
+                    'WARNING': 'yellow',
+                    'ERROR': 'red',
+                    'CRITICAL': 'bold_red',
+                }
+            )
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(color_formatter)
 ```
 
 ### 백업 및 복구
@@ -385,24 +515,33 @@ logging.basicConfig(
 
 ## ✅ 구현 마일스톤
 
-### Phase 1: 기본 파싱 및 변환 (주 1-2)
-- [ ] 텍스트 파서 구현
-- [ ] HTML 생성기 구현
-- [ ] 단위 테스트 작성
+### Phase 1: 기본 설계 및 모델 구현 (완료)
+- [x] 프로젝트 구조 설계
+- [x] 데이터 모델 구현 (모델, 설정, 로깅)
+- [x] 성경 책 매핑 데이터 정의
 
-### Phase 2: 워드프레스 연동 (주 3)
-- [ ] REST API 클라이언트 구현
-- [ ] 인증 및 보안 설정
-- [ ] 통합 테스트
+### Phase 2: 기본 파싱 및 변환 (현재 진행 중)
+- [x] 텍스트 파서 구현
+- [x] HTML 생성기 구현
+- [x] 단위 테스트 작성
+- [ ] 성능 최적화 (대용량 파일 처리)
 
-### Phase 3: UI/UX 및 접근성 (주 4)
-- [ ] CSS/JavaScript 구현
-- [ ] 접근성 테스트
-- [ ] 반응형 디자인
+### Phase 3: 워드프레스 연동 (예정)
+- [x] REST API 클라이언트 기본 구현
+- [x] 인증 및 보안 설정
+- [ ] 게시물 메타데이터 관리
+- [ ] 통합 테스트 강화
 
-### Phase 4: 배포 및 최적화 (주 5)
-- [ ] 성능 최적화
-- [ ] 문서화 완료
+### Phase 4: UI/UX 및 접근성 (예정)
+- [x] 기본 CSS/JavaScript 구현
+- [ ] 사용자 인터페이스 개선
+- [ ] 접근성 테스트 및 개선
+- [ ] 반응형 디자인 완료
+
+### Phase 5: 배포 및 최적화 (예정)
+- [ ] 전체 시스템 성능 최적화
+- [x] CLI 도구 완성
+- [x] 문서화 완료
 - [ ] 프로덕션 배포
 
 이 설계서를 기반으로 단계별 구현을 진행하시면 됩니다. 추가로 상세히 다뤄야 할 부분이 있으면 말씀해 주세요.
