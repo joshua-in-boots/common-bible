@@ -202,12 +202,17 @@ python -m pytest --cov=src tests/
         <span aria-hidden="true" class="paragraph-marker">¶</span>
         한처음에 하느님께서 하늘과 땅을 지어내셨다.
       </span>
-    </p>
-    
-    <p>
       <span id="창세-1-2">
         <span aria-hidden="true" class="verse-number">2</span>
         땅은 아직 모양을 갖추지 않고...
+      </span>
+    </p>
+    
+    <p>
+      <span id="창세-1-3">
+        <span aria-hidden="true" class="verse-number">3</span>
+        <span aria-hidden="true" class="paragraph-marker">¶</span>
+        하느님께서 "빛이 생겨라!" 하시자...
       </span>
     </p>
   </article>
