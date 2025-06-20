@@ -285,6 +285,36 @@ class HTMLGenerator:
         except Exception as e:
             self.logger.error(f"HTML 파일 저장 실패: {output_path} - {e}")
             return ""
+    
+    def _generate_verse_html(self, chapter, verses):
+        """
+        단락 구분 로직 수정: ¶ 기호가 있는 절에서만 새 단락 시작
+        """
+        html_parts = []
+        current_paragraph = []
+        
+        for verse in verses:
+            verse_html = f'<span id="{verse.verse_id}">'
+            verse_html += f'<span aria-hidden="true" class="verse-number">{verse.number}</span> '
+            
+            # 단락 마커가 있는 경우에만 표시
+            if verse.starts_paragraph:
+                verse_html += '<span aria-hidden="true" class="paragraph-marker">¶</span> '
+            
+            verse_html += f'{verse.text}</span>'
+            
+            # 새 단락 시작 조건: 현재 절이 단락 시작 마커를 가지고 있고, 이전 단락이 비어있지 않은 경우
+            if verse.starts_paragraph and current_paragraph:
+                html_parts.append(f"<p>\n  {' '.join(current_paragraph)}\n</p>")
+                current_paragraph = [verse_html]
+            else:
+                current_paragraph.append(verse_html)
+        
+        # 마지막 단락 추가
+        if current_paragraph:
+            html_parts.append(f"<p>\n  {' '.join(current_paragraph)}\n</p>")
+        
+        return "\n\n".join(html_parts)
 
 
 def main():
