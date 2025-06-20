@@ -1,38 +1,24 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ book_name }} {{ chapter_number }}장</title>
-    <meta name="description" content="공동번역성서 {{ book_name }} {{ chapter_number }}장">
-    <link rel="stylesheet" href="{{ css_path }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ chapter.title }}</title>
+  <link rel="stylesheet" href="verse-style.css">
 </head>
 <body>
-    <header>
-        <div class="search-container">
-            <input type="text" id="verse-search" placeholder="예: 창세 1:1 또는 창세기 1장 1-5절" aria-label="성경 구절 검색">
-            <button id="search-button">검색</button>
-        </div>
-        <nav class="chapter-navigation">
-            <button id="prev-chapter" aria-label="이전 장">&larr; 이전</button>
-            <div class="chapter-info">{{ book_name }} {{ chapter_number }}장</div>
-            <button id="next-chapter" aria-label="다음 장">다음 &rarr;</button>
-        </nav>
-    </header>
+  <!-- 절 검색 UI -->
+  <div class="search-container">
+    <input type="text" id="verse-search" placeholder="절 ID 입력 (예: 창세-1-3 또는 창세기 1:3)">
+    <button id="verse-search-btn">이동</button>
+  </div>
+
+  <article id="{{ chapter.id }}">
+    <h1>{{ chapter.title }}</h1>
     
-    <main>
-        <article id="{{ chapter_id }}" class="bible-chapter" data-book="{{ book_abbr }}" data-chapter="{{ chapter_number }}">
-            <h1>{{ book_name }} {{ chapter_number }}장</h1>
-            
-            {{ verses_html|safe }}
-            
-        </article>
-    </main>
-    
-    <footer>
-        <p>공동번역성서 개정판</p>
-    </footer>
-    
-    <script src="{{ js_path }}"></script>
+    {{ verse_content|safe }}
+  </article>
+  
+  <script src="verse-navigator.js"></script>
 </body>
 </html>

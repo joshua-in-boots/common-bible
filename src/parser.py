@@ -177,36 +177,36 @@ class BibleParser:
     def _parse_verses(self, chapter_text: str) -> List[Verse]:
         """
         장 텍스트에서 절 파싱
-        
+    
         Args:
             chapter_text: 장 텍스트
-        
+    
         Returns:
             파싱된 절 리스트
         """
         verses = []
-        
+    
+        # 책 약칭과 장 번호 추출
+        title_match = re.match(r'([가-힣0-9]+)\s+([0-9]+):([0-9]+)', chapter_text)
+        if not title_match:
+            self.logger.warning(f"장 제목 파싱 실패: {chapter_text[:50]}...")
+            return []
+    
+        book_abbr, chapter_num, _ = title_match.groups()
+    
         # 절 패턴: "절번호 본문"
         verse_pattern = r'([0-9]+)\s+([^0-9]+?)(?=\s+[0-9]+\s+|$)'
         verse_matches = re.finditer(verse_pattern, chapter_text)
-        
+    
         for match in verse_matches:
             verse_num, verse_text = match.groups()
             verse_num = int(verse_num)
             verse_text = verse_text.strip()
-            
-            # 단독 ¶로 절 분할 확인
-            sub_parts = self._split_verse_by_paragraph(verse_text)
-            
-            # 절 객체 생성
-            verse = Verse(number=verse_num, text=verse_text)
-            
-            # 분할된 하위 파트가 있는 경우
-            if sub_parts:
-                verse.sub_parts = sub_parts
-            
-            verses.append(verse)
         
+            # _parse_verse 메서드를 사용하여 단락 시작 여부 처리
+            verse = self._parse_verse(verse_text, book_abbr, chapter_num, verse_num)
+            verses.append(verse)
+    
         return verses
     
     def _split_verse_by_paragraph(self, verse_text: str) -> List[str]:
@@ -292,6 +292,29 @@ class BibleParser:
                     self.logger.error(f"장 JSON 저장 실패: {file_path} - {e}")
         
         self.logger.info(f"모든 장 JSON 저장 완료: {output_dir}")
+    
+    def _parse_verse(self, text, book_abbr, chapter_num, verse_num):
+        """
+        개별 절 파싱
+        
+        단락 시작 여부를 식별하여 verse.starts_paragraph에 설정
+        """
+        starts_paragraph = False
+        
+        # 단락 마커 존재 여부 확인
+        if "¶" in text:
+            starts_paragraph = True
+            # 단락 마커는 내부 처리용이므로 출력 텍스트에서 제거
+            text = text.replace("¶", "").strip()
+        
+        verse_id = f"{book_abbr}-{chapter_num}-{verse_num}"
+        
+        return Verse(
+            number=verse_num,
+            text=text,
+            verse_id=verse_id,
+            starts_paragraph=starts_paragraph
+        )
 
 
 def main():
