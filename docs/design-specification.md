@@ -2,7 +2,7 @@
 
 ## 📋 개요
 
-본 설계서는 공동번역성서 텍스트 파일을 파싱하여 HTML로 변환하고, 워드프레스를 통해 접근성 친화적으로 게시하는 시스템의 상세 설계를 다룹니다.
+본 설계서는 공동번역성서 텍스트 파일을 파싱하여 HTML로 변환하고, 워드프레스를 통해 접근성 친화적으로 게시하는 시스템의 상세 설계를 다룹니다. 각 성경 장은 본문과 오디오 파일이 함께 제공되며, 검색 기능과 접근성 향상을 위한 WAI-ARIA 속성이 포함됩니다. 워드프레스 REST API를 활용하여 게시물 등록 과정을 자동화합니다.
 
 ---
 
@@ -14,11 +14,17 @@
 │ common-bible-   │    │   Converter      │    │   Publishing    │
 │   kr.txt        │    │   (Python)       │    │   (REST API)    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
+                              │                        ^
+                              v                        │
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Audio Files   │ -> │   HTML Output    │ -> │   Metadata      │
+│   (.mp3)        │    │   + CSS/JS       │    │   Generator     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
                               │
                               v
                        ┌──────────────────┐
-                       │   HTML Output    │
-                       │   + CSS/JS       │
+                       │   Search &       │
+                       │   Accessibility  │
                        └──────────────────┘
 ```
 
@@ -34,20 +40,29 @@ common-bible/
 │   ├── models.py           # 데이터 모델 클래스
 │   ├── html_generator.py   # HTML 생성기
 │   ├── wp_publisher.py     # 워드프레스 게시 클래스
+│   ├── audio_manager.py    # 오디오 파일 관리
+│   ├── search.py           # 검색 기능 구현
+│   ├── accessibility.py    # 접근성 기능 지원
 │   ├── config.py           # 설정 관리
 │   ├── security.py         # 보안 관리
 │   ├── logger.py           # 로깅 시스템
 │   ├── cli.py              # 명령줄 인터페이스
 │   └── main.py             # 메인 실행 모듈
 ├── templates/
-│   └── chapter_template.html
+│   ├── chapter_template.html  # 기본 장 템플릿
+│   └── audio_player.html     # 오디오 플레이어 템플릿
 ├── static/
-│   ├── verse-style.css
-│   └── verse-navigator.js
+│   ├── verse-style.css     # 기본 스타일시트
+│   ├── audio-player.css    # 오디오 플레이어 스타일
+│   ├── verse-navigator.js  # 절 이동 및 검색
+│   └── accessibility.js    # 접근성 지원 스크립트
 ├── data/
-│   ├── common-bible-kr.txt
+│   ├── common-bible-kr.txt  # 원본 텍스트
 │   ├── bible_book_mappings.json  # 성경 책 이름 매핑 데이터
+│   ├── audio_mappings.json  # 오디오 파일 매핑 데이터
 │   └── output/             # 생성된 HTML 파일들
+├── audio/                  # 오디오 파일 저장소
+│   └── {book-name}-{chapter}.mp3  # 예: genesis-1.mp3
 ├── config/
 │   └── .env.example        # 환경변수 예제 (보안)
 ├── logs/                   # 로그 저장 디렉터리
@@ -118,8 +133,9 @@ class BibleParser:
 
 ```python
 class HTMLGenerator:
-    def __init__(self, template_path: str):
+    def __init__(self, template_path: str, audio_manager=None):
         self.template_path = template_path
+        self.audio_manager = audio_manager or AudioManager()
     
     def generate_chapter_html(self, chapter: Chapter) -> str:
         """장 단위 HTML 생성"""
@@ -129,6 +145,26 @@ class HTMLGenerator:
         """절 HTML 요소 생성 (접근성 고려)"""
         pass
     
+    def generate_audio_player(self, chapter: Chapter) -> str:
+        """오디오 플레이어 HTML 요소 생성"""
+        audio_path = self.audio_manager.get_audio_path(chapter)
+        audio_title = f"{chapter.book_name} {chapter.chapter_number}장 오디오"
+        
+        # 접근성 고려 오디오 플레이어 생성
+        return f"""
+        <div class="audio-player-container">
+          <h2 class="screen-reader-text">성경 오디오</h2>
+          <audio controls class="bible-audio" aria-label="{audio_title}">
+            <source src="{audio_path}" type="audio/mpeg">
+            <p>브라우저가 오디오 재생을 지원하지 않습니다. <a href="{audio_path}">오디오 파일 다운로드</a></p>
+          </audio>
+        </div>
+        """
+    
+    def generate_search_ui(self, chapter: Chapter) -> str:
+        """검색 UI 생성"""
+        pass
+    
     def apply_accessibility_attributes(self, element: str) -> str:
         """접근성 속성 적용"""
         pass
@@ -136,11 +172,58 @@ class HTMLGenerator:
 
 **주요 기능:**
 - 시맨틱 HTML 구조 생성 (`<article>`, `<h1>`, `<p>`, `<span>`)
+- 접근성이 강화된 오디오 플레이어 통합
 - 절 번호에 `aria-hidden="true"` 적용
+- 단락 구분 기호(¶)에 `aria-hidden="true"` 적용
 - 고유한 ID 생성 (`창세-1-3`, `창세-1-4a` 등)
+- 검색 인터페이스 통합
 - CSS/JS 파일 링크 포함
 
-### 3. 워드프레스 게시자 (wp_publisher.py)
+### 3. 오디오 관리자 (audio_manager.py)
+
+```python
+class AudioManager:
+    def __init__(self, audio_base_path: str = 'audio', mappings_path: str = 'data/audio_mappings.json'):
+        self.audio_base_path = audio_base_path
+        self.mappings_path = mappings_path
+        self.mappings = self.load_mappings()
+    
+    def load_mappings(self) -> Dict[str, str]:
+        """오디오 파일 매핑 데이터 로드"""
+        try:
+            with open(self.mappings_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+    
+    def get_audio_path(self, chapter: Chapter) -> str:
+        """장에 해당하는 오디오 파일 경로 반환"""
+        book_slug = self.get_book_slug(chapter.book_name)
+        file_name = f"{book_slug}-{chapter.chapter_number}.mp3"
+        return f"{self.audio_base_path}/{file_name}"
+    
+    def get_book_slug(self, book_name: str) -> str:
+        """책 이름을 URL 슬러그로 변환"""
+        for book in self.mappings.get('books', []):
+            if book.get('name') == book_name:
+                return book.get('slug', book_name.lower().replace(' ', '-'))
+        return self.default_slug(book_name)
+    
+    def default_slug(self, book_name: str) -> str:
+        """기본 슬러그 생성 (영문명 매핑 없을 경우)"""
+        book_slug_mapping = {
+            "창세기": "genesis",
+            "출애굽기": "exodus",
+            # ... 기타 매핑
+        }
+        return book_slug_mapping.get(book_name, book_name.lower().replace(' ', '-'))
+    
+    def verify_audio_file(self, file_path: str) -> bool:
+        """오디오 파일 존재 여부 확인"""
+        return os.path.exists(file_path)
+```
+
+### 4. 워드프레스 게시자 (wp_publisher.py)
 
 ```python
 class WordPressPublisher:
@@ -148,25 +231,75 @@ class WordPressPublisher:
         self.wp_url = wp_url
         self.auth_token = auth_token
         self.session = requests.Session()
+        self.logger = Logger().get_logger('wp_publisher')
     
-    def publish_chapter(self, chapter: Chapter, html_content: str) -> bool:
+    def publish_chapter(self, chapter: Chapter, html_content: str, 
+                       audio_path: str = None, status: str = 'draft') -> Dict[str, Any]:
         """개별 장을 워드프레스에 게시"""
-        pass
+        post_data = self._prepare_post_data(chapter, html_content, audio_path, status)
+        return self._make_api_request('posts', method='POST', data=post_data)
     
-    def batch_publish_all(self, chapters: List[Chapter]) -> List[str]:
+    def _prepare_post_data(self, chapter: Chapter, html_content: str, 
+                          audio_path: str = None, status: str = 'draft') -> Dict[str, Any]:
+        """게시물 데이터 준비"""
+        title = f"{chapter.book_name} {chapter.chapter_number}장"
+        slug = f"{self._get_book_slug(chapter.book_name)}-{chapter.chapter_number}"
+        
+        post_data = {
+            'title': title,
+            'slug': slug,
+            'content': html_content,
+            'status': status,
+            'categories': [self._get_category_id('성서'), self._get_category_id('공동번역성서')],
+            'tags': [chapter.book_name, f"{chapter.chapter_number}장"],
+            'meta': {
+                'bible_book': chapter.book_name,
+                'bible_chapter': chapter.chapter_number
+            }
+        }
+        
+        # 오디오 파일 메타데이터 추가
+        if audio_path:
+            post_data['meta']['bible_audio'] = audio_path
+            
+        return post_data
+    
+    def batch_publish_all(self, chapters: List[Chapter], 
+                        html_contents: List[str], 
+                        audio_paths: List[str] = None, 
+                        status: str = 'draft') -> List[Dict[str, Any]]:
         """모든 장을 일괄 공개"""
-        pass
+        results = []
+        for i, chapter in enumerate(chapters):
+            audio_path = None if not audio_paths else audio_paths[i]
+            try:
+                result = self.publish_chapter(chapter, html_contents[i], audio_path, status)
+                results.append(result)
+            except Exception as e:
+                self.logger.error(f"Failed to publish chapter {chapter.id}: {e}")
+                results.append({'error': str(e), 'chapter_id': chapter.id})
+        return results
+    
+    def update_post_status(self, post_id: int, status: str) -> Dict[str, Any]:
+        """게시물 상태 업데이트"""
+        return self._make_api_request(f'posts/{post_id}', method='POST', data={'status': status})
     
     def validate_auth(self) -> bool:
         """인증 상태 확인"""
-        pass
+        try:
+            response = self._make_api_request('users/me', method='GET')
+            return 'id' in response
+        except Exception:
+            return False
 ```
 
 **주요 기능:**
-- REST API를 통한 포스트 생성 (`POST /wp-json/wp/v2/posts`)
-- 초기 `private` 상태로 게시
-- 일괄 `publish` 상태 변경
-- 오류 처리 및 재시도 로직
+- REST API를 통한 포스트 생성 및 관리 (`/wp-json/wp/v2/posts`)
+- 오디오 파일 메타데이터 포함
+- 게시물 상태 관리 (초안, 대기중, 발행)
+- 카테고리, 태그, 메타데이터 설정
+- 오류 처리, 로깅 및 재시도 로직
+- 게시 현황 모니터링
 
 ---
 
@@ -178,12 +311,14 @@ class WordPressPublisher:
   {
     "약칭": "창세",
     "전체 이름": "창세기",
-    "영문 이름": "Genesis"
+    "영문 이름": "Genesis",
+    "slug": "genesis"
   },
   {
     "약칭": "출애",
     "전체 이름": "출애굽기",
-    "영문 이름": "Exodus"
+    "영문 이름": "Exodus",
+    "slug": "exodus"
   }
   // ... 총 66권의 성경 책 매핑
 ]
@@ -193,6 +328,63 @@ class WordPressPublisher:
 - 텍스트 파싱 시 책 이름 식별
 - 약칭을 전체 이름으로 변환
 - 다국어 지원을 위한 영문 이름 제공
+- URL 슬러그 자동 생성
+
+### 오디오 파일 매핑 (audio_mappings.json)
+```json
+{
+  "audio_base_url": "https://seoul.anglican.kr/wp-content/uploads/bible-audio/",
+  "file_format": "mp3",
+  "books": [
+    {
+      "name": "창세기",
+      "slug": "genesis",
+      "chapters": 50,
+      "audio_format": "{slug}-{chapter}.{format}"
+    },
+    {
+      "name": "출애굽기",
+      "slug": "exodus",
+      "chapters": 40,
+      "audio_format": "{slug}-{chapter}.{format}"
+    }
+    // ... 기타 성경 책
+  ]
+}
+```
+
+**용도:**
+- 장별 오디오 파일 경로 자동 생성
+- 오디오 파일 존재 여부 확인
+- 워드프레스 게시물에 오디오 메타데이터 추가
+- CDN 또는 로컬 파일 시스템 경로 통합
+
+### 검색 기능 (search.py)
+```python
+class BibleSearch:
+    def __init__(self):
+        """검색 시스템 초기화"""
+        self.verse_pattern = re.compile(r'(\d?[가-힣]+)\s*(\d+):(\d+[a-z]?)$')
+        
+    def parse_verse_id(self, query: str) -> Optional[str]:
+        """절 ID 형식으로 파싱 (예: '창세 1:3' -> '창세-1-3')"""
+        match = self.verse_pattern.match(query.strip())
+        if match:
+            book, chapter, verse = match.groups()
+            return f"{book}-{chapter}-{verse}"
+        return None
+    
+    def highlight_search_terms(self, content: str, terms: List[str]) -> str:
+        """검색어 하이라이트 처리"""
+        if not terms:
+            return content
+            
+        for term in terms:
+            pattern = re.compile(f'({re.escape(term)})', re.IGNORECASE)
+            content = pattern.sub(r'<mark>\1</mark>', content)
+            
+        return content
+```
 
 ---
 
@@ -227,6 +419,8 @@ class Chapter:
     verses: List[Verse]      # 절 객체 리스트
     id: str = ""            # "창세-1"
     book_abbr: str = ""     # "창세"
+    audio_path: str = ""    # "audio/genesis-1.mp3"
+    slug: str = ""          # "genesis-1"
 ```
 
 ### Verse 클래스
@@ -238,6 +432,7 @@ class Verse:
     has_paragraph: bool = False  # ¶ 기호 유무
     sub_parts: List[str] = field(default_factory=list)  # 단독 ¶로 분할된 경우
     id: str = ""            # "창세-1-1" or "창세-1-4a"
+    starts_paragraph: bool = False  # 단락 시작 여부
 ```
 
 ---
@@ -387,7 +582,49 @@ python -m src.cli update-status --status publish
 python -m src.cli pipeline --status private
 ```
 
-### 3. 메인 모듈 사용 (main.py)
+### 3. 워드프레스 게시물 구조
+
+```html
+<!-- 워드프레스 게시물 기본 구조 -->
+<article class="bible-chapter">
+  <!-- 오디오 플레이어 (접근성 고려) -->
+  <div class="audio-player-container">
+    <h2 class="screen-reader-text">성경 오디오</h2>
+    <audio controls class="bible-audio" aria-label="창세기 1장 오디오">
+      <source src="audio/genesis-1.mp3" type="audio/mpeg">
+      <p>브라우저가 오디오 재생을 지원하지 않습니다. <a href="audio/genesis-1.mp3">오디오 파일 다운로드</a></p>
+    </audio>
+  </div>
+  
+  <!-- 검색 UI -->
+  <div class="search-container">
+    <form id="verse-search-form" role="search" aria-label="성경 구절 검색">
+      <label for="verse-search" class="screen-reader-text">절 검색</label>
+      <input type="text" id="verse-search" placeholder="절 ID 또는 단어 검색 (예: 창세 1:3, 하느님)" aria-describedby="search-help">
+      <button id="verse-search-btn" type="submit">이동</button>
+    </form>
+    <p id="search-help" class="search-help-text">책 장:절 형식으로 검색하거나 단어를 입력하세요. 예: '창세 1:1' 또는 '하느님'</p>
+  </div>
+  
+  <!-- 본문 내용 -->
+  <h1>창세기 1장</h1>
+  <!-- 성경 본문 -->
+  <div class="bible-content">
+    <p>
+      <span id="창세-1-1"><span aria-hidden="true" class="verse-number">1</span> <span class="paragraph-marker" aria-hidden="true">¶</span> 한처음에 하느님께서 하늘과 땅을 지어내셨다.</span>
+      <span id="창세-1-2"><span aria-hidden="true" class="verse-number">2</span> 땅은 아직 모양을 갖추지 않고 아무것도 생기지 않았는데, 어둠이 깊은 물 위에...</span>
+    </p>
+  </div>
+  
+  <!-- 추가 메타정보 -->
+  <div class="bible-meta">
+    <p>공동번역성서 개정판</p>
+    <p class="audio-credit">오디오: 서울교구 성서모임</p>
+  </div>
+</article>
+```
+
+### 4. 메인 모듈 사용 (main.py)
 ```bash
 # 전체 파이프라인 실행
 python -m src.main --full-pipeline
@@ -396,13 +633,57 @@ python -m src.main --full-pipeline
 python -m src.main --parse --input data/common-bible-kr.txt --split-chapters
 
 # HTML 생성만 실행
-python -m src.main --generate-html --json-input data/output/chapters
+python -m src.main --generate-html --json-input data/output/chapters --with-audio
 
 # 워드프레스 게시만 실행
-python -m src.main --publish --status private
+python -m src.main --publish --status private --url https://seoul.anglican.kr --author admin@anglican
 
 # 인증 테스트만 실행
-python -m src.main --test-auth
+python -m src.main --test-auth --url https://seoul.anglican.kr
+```
+
+### 5. 워드프레스 REST API 통합
+
+```python
+def publish_to_wordpress(chapter: Chapter, html_content: str, audio_path: str):
+    """워드프레스에 게시물 게시"""
+    # 기본 설정
+    wp_url = "https://seoul.anglican.kr"
+    endpoint = f"{wp_url}/wp-json/wp/v2/posts"
+    auth_user = "admin@anglican"
+    auth_pass = os.environ.get("WP_AUTH_PASSWORD")
+    
+    # 게시물 데이터 준비
+    title = f"{chapter.book_name} {chapter.chapter_number}장"
+    slug = f"{chapter.slug}"
+    publish_date = "2025-07-01T00:00:00"
+    
+    # 본문 데이터
+    content = {
+        'title': title,
+        'content': html_content,
+        'slug': slug,
+        'status': 'private',
+        'author': 1,  # admin 사용자 ID
+        'date': publish_date,
+        'categories': [5, 10],  # 성서, 공동번역성서 카테고리 ID
+        'tags': [15, 20],  # 태그 ID
+        'meta': {
+            'bible_book': chapter.book_name,
+            'bible_chapter': chapter.chapter_number,
+            'audio_file': audio_path
+        }
+    }
+    
+    # API 요청
+    response = requests.post(
+        endpoint,
+        json=content,
+        auth=HTTPBasicAuth(auth_user, auth_pass),
+        headers={'Content-Type': 'application/json'}
+    )
+    
+    return response.json()
 ```
 
 ---
@@ -520,28 +801,40 @@ class Logger:
 - [x] 데이터 모델 구현 (모델, 설정, 로깅)
 - [x] 성경 책 매핑 데이터 정의
 
-### Phase 2: 기본 파싱 및 변환 (현재 진행 중)
+### Phase 2: 기본 파싱 및 변환 (완료)
 - [x] 텍스트 파서 구현
 - [x] HTML 생성기 구현
 - [x] 단위 테스트 작성
-- [ ] 성능 최적화 (대용량 파일 처리)
+- [x] 성능 최적화 (대용량 파일 처리)
 
-### Phase 3: 워드프레스 연동 (예정)
+### Phase 3: 접근성 및 오디오 통합 (현재 진행 중)
+- [x] 단락 구분(¶) 로직 구현
+- [x] 접근성 속성 적용 (`aria-hidden`, 스크린리더 지원)
+- [ ] 오디오 파일 매핑 시스템 구현
+- [ ] 접근성 강화된 오디오 플레이어 통합
+- [ ] 검색 기능 구현 (절 ID, 단어/문구 검색)
+
+### Phase 4: 워드프레스 연동 및 자동화 (예정)
 - [x] REST API 클라이언트 기본 구현
 - [x] 인증 및 보안 설정
-- [ ] 게시물 메타데이터 관리
+- [ ] 게시물 메타데이터 및 오디오 통합
+- [ ] https://seoul.anglican.kr 사이트 연동
+- [ ] 게시물 서식 및 태그 자동화
 - [ ] 통합 테스트 강화
 
-### Phase 4: UI/UX 및 접근성 (예정)
+### Phase 5: UI/UX 및 사용자 경험 (예정)
 - [x] 기본 CSS/JavaScript 구현
-- [ ] 사용자 인터페이스 개선
+- [ ] 검색 UI 개선
+- [ ] 오디오 플레이어 UI 개선
 - [ ] 접근성 테스트 및 개선
 - [ ] 반응형 디자인 완료
 
-### Phase 5: 배포 및 최적화 (예정)
+### Phase 6: 배포 및 최적화 (예정)
 - [ ] 전체 시스템 성능 최적화
+- [ ] 대량 게시물 처리 최적화
 - [x] CLI 도구 완성
 - [x] 문서화 완료
-- [ ] 프로덕션 배포
+- [ ] 로깅 및 모니터링 강화
+- [ ] 프로덕션 배포 (2025년 7월 1일 목표)
 
 이 설계서를 기반으로 단계별 구현을 진행하시면 됩니다. 추가로 상세히 다뤄야 할 부분이 있으면 말씀해 주세요.
